@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TNSB Lesson Plan Creator (Table Format)</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/pdfmake.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.10/vfs_fonts.min.js"></script>
+
+<style>
+    .hidden { display: none !important; }
+    
+    /* --- PRINT / PDF STYLING (Matches your Uploaded PDF) --- */
+    #content {
+        font-family: 'Times New Roman', Times, serif;
+        color: #000;
+        background: white;
+        width: 210mm; 
+        min-height: 297mm;
+        padding: 15mm;
+        margin: 0 auto;
+        box-shadow: 0 0 15px rgba(0,0,0,0.1);
+        font-size: 12pt;
+        line-height: 1.3;
+    }
+
+    /* Header Grid */
+    .header-grid {
+        display: grid;
+        grid-template-columns: 180px 1fr;
+        gap: 5px;
+        margin-bottom: 5px;
+    }
+    .header-label { font-weight: bold; }
+
+    /* The Main Lesson Plan Table */
+    .lp-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 15px;
+        margin-bottom: 15px;
+    }
+    .lp-table th, .lp-table td {
+        border: 1px solid black;
+        padding: 8px;
+        vertical-align: top;
+        text-align: left;
+    }
+    .lp-table th {
+        background-color: #f3f3f3;
+        font-weight: bold;
+        text-align: center;
+    }
+    
+    /* Column Widths to match the scan */
+    .col-content { width: 20%; }
+    .col-specs { width: 15%; }
+    .col-experience { width: 45%; }
+    .col-eval { width: 20%; }
+
+    /* Activity subsections */
+    .activity-header {
+        font-weight: bold;
+        text-decoration: underline;
+        margin-bottom: 4px;
+        display: block;
+    }
+
+    /* Signatures */
+    .signature-section {
+        margin-top: 50px;
+        display: flex;
+        justify-content: space-between;
+        font-weight: bold;
+    }
+</style>
+</head>
+
+<body class="min-h-screen bg-slate-100 py-8 px-4 text-slate-800 font-sans">
+
+<div class="max-w-6xl mx-auto">
+    <div class="text-center mb-8">
+        <h1 class="text-3xl font-bold text-indigo-900">AI Lesson Plan Creator</h1>
+        <p class="text-sm text-gray-500">Upload Textbook &rarr; Fill Details &rarr; Get Formatted PDF</p>
+    </div>
+
+    <div id="statusBox" class="hidden bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded shadow-sm mx-auto max-w-3xl">
+        <p class="font-bold text-yellow-700" id="statusTitle">Processing...</p>
+        <p class="text-sm text-yellow-600" id="statusMessage"></p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        <div class="bg-white rounded-xl shadow-lg p-6 space-y-5 h-fit">
+            
+            <div class="p-3 bg-gray-50 rounded border border-gray-200">
+                <label class="block text-xs font-bold text-gray-500 uppercase">Groq API Key</label>
+                <input type="password" id="apiKeyInput" class="w-full mt-1 px-3 py-2 border rounded text-sm outline-none focus:border-indigo-500" placeholder="Paste gq-... key here" />
+                <p class="text-xs text-gray-500 mt-1">Get your free key at <a href="https://console.groq.com/keys" target="_blank" class="underline">console.groq.com</a></p>
+            </div>
+
+            <div class="border-t pt-4">
+                <label class="block font-bold text-indigo-900 mb-2">1. Upload Textbook Page</label>
+                <input type="file" id="pdfFile" accept="application/pdf" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"/>
+                
+                <div id="pageInputs" class="hidden grid grid-cols-2 gap-2 mt-3">
+                    <input type="number" id="fromPage" class="border px-2 py-1 rounded" placeholder="Start Pg" />
+                    <input type="number" id="toPage" class="border px-2 py-1 rounded" placeholder="End Pg" />
+                </div>
+                <button id="runOCR" class="hidden mt-3 w-full bg-indigo-600 text-white py-2 rounded font-bold hover:bg-indigo-700">Extract Text</button>
+            </div>
+
+            <div class="border-t pt-4 space-y-3">
+                <h3 class="font-bold text-gray-800">2. Teacher Details</h3>
+                <input id="studentTeacher" class="w-full px-3 py-2 border rounded text-sm" placeholder="Name of Student Teacher" />
+                <input id="guideTeacher" class="w-full px-3 py-2 border rounded text-sm" placeholder="Name of Guide Teacher" />
+                <input id="schoolName" class="w-full px-3 py-2 border rounded text-sm" placeholder="School Name" />
+            </div>
+
+            <div class="border-t pt-4 space-y-3">
+                <h3 class="font-bold text-gray-800">3. Lesson Info</h3>
+                <div class="grid grid-cols-2 gap-2">
+                    <input id="cls" class="px-3 py-2 border rounded text-sm" placeholder="Class (e.g. VIII)" />
+                    <input id="subject" class="px-3 py-2 border rounded text-sm" placeholder="Subject (e.g. English)" />
+                </div>
+                <input id="lessonTopic" class="w-full px-3 py-2 border rounded text-sm" placeholder="Topic (e.g. Hobby Turns...)" />
+                <div class="grid grid-cols-2 gap-2">
+                    <input id="unit" class="px-3 py-2 border rounded text-sm" placeholder="Unit (e.g. Prose)" />
+                    <input id="duration" class="px-3 py-2 border rounded text-sm" placeholder="Duration (e.g. 45 min)" />
+                </div>
+                <input id="date" class="w-full px-3 py-2 border rounded text-sm" type="date" />
+            </div>
+
+            <button id="generatePlan" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded shadow-lg text-lg flex justify-center items-center gap-2">
+                <span>Generate Plan</span>
+            </button>
+            
+            <button onclick="downloadPDF()" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 rounded shadow flex justify-center items-center gap-2">
+                Download PDF
+            </button>
+        </div>
+
+        <div class="lg:col-span-2 bg-gray-200 p-4 rounded-xl overflow-auto h-screen">
+            <div id="content">
+                <div class="text-center text-gray-400 mt-20">
+                    <p class="text-xl">Generated Lesson Plan will appear here.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// --- CONFIGURATION ---
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+// --- STATE ---
+let ocrText = "";
+let globalPlan = null;
+
+// --- UI HELPERS ---
+function setStatus(title, msg, type='process') {
+    const box = document.getElementById('statusBox');
+    if(!title) { box.classList.add('hidden'); return; }
+    box.classList.remove('hidden');
+    document.getElementById('statusTitle').textContent = title;
+    document.getElementById('statusMessage').textContent = msg;
+    box.className = type === 'error' 
+        ? "bg-red-50 border-l-4 border-red-400 p-4 mb-6 rounded shadow-sm mx-auto max-w-3xl"
+        : "bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded shadow-sm mx-auto max-w-3xl";
+}
+
+// --- 1. OCR LOGIC ---
+document.getElementById("pdfFile").addEventListener("change", () => {
+    document.getElementById("pageInputs").classList.remove("hidden");
+    document.getElementById("runOCR").classList.remove("hidden");
+});
+
+document.getElementById("runOCR").addEventListener("click", async () => {
+    const file = document.getElementById("pdfFile").files[0];
+    const from = parseInt(document.getElementById("fromPage").value);
+    const to = parseInt(document.getElementById("toPage").value);
+    
+    if(!file || !from || !to) return alert("Please upload file and set page range.");
+
+    try {
+        setStatus("Processing OCR", "Reading PDF pages...");
+        const buffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument(buffer).promise;
+        
+        let textAcc = "";
+        for(let i=from; i<=to; i++) {
+            setStatus("OCR Scanning", `Scanning page ${i}...`);
+            const page = await pdf.getPage(i);
+            const viewport = page.getViewport({scale: 2});
+            const canvas = document.createElement("canvas");
+            const ctx = canvas.getContext("2d");
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            await page.render({canvasContext: ctx, viewport}).promise;
+            
+            const res = await Tesseract.recognize(canvas, 'eng');
+            textAcc += res.data.text + "\n";
+        }
+        ocrText = textAcc;
+        setStatus("Success", "Text extracted! Fill details and click Generate.");
+        setTimeout(() => setStatus(null), 3000);
+    } catch(e) {
+        console.error(e);
+        setStatus("Error", "OCR Failed.", "error");
+    }
+});
+
+// --- 2. AI GENERATION LOGIC ---
+document.getElementById("generatePlan").addEventListener("click", async () => {
+    const apiKey = document.getElementById("apiKeyInput").value.trim();
+    if(!apiKey) return alert("API Key required");
+    if(!ocrText) return alert("Please extract text first (Step 1)");
+
+    setStatus("AI Generating", "Consulting Groq Model (fast inference)...");
+
+    const prompt = `You are a Teacher for Tamil Nadu State Board.
+Analyze this textbook content:
+"${ocrText.slice(0, 20000)}"  // Limited to avoid token overflow
+
+Create a JSON object for a Lesson Plan table.
+The user details are: Class ${document.getElementById("cls").value}, Subject ${document.getElementById("subject").value}, Topic ${document.getElementById("lessonTopic").value}.
+
+RETURN ONLY VALID JSON (no markdown, no extra text). Format:
+{
+    "introduction": "Brief text to introduce lesson",
+    "rows": [
+        {
+            "content": "Sub-topic or Content segment",
+            "specifications": "Specific objective (e.g. Recognizes, Understands)",
+            "teacher_activity": "What teacher does/explains",
+            "student_activity": "What student does",
+            "evaluation": "A question to ask"
+        }
+    ],
+    "follow_up": "Homework or assignment"
+}
+Make sure to create at least 10-11 rows covering the whole text.`;
+
+    try {
+        const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify({
+                model: 'llama-3.3-70b-versatile',
+                messages: [
+                    { role: 'system', content: 'You are a helpful assistant that outputs only valid JSON when asked.' },
+                    { role: 'user', content: prompt }
+                ],
+                temperature: 0.7,
+                max_tokens: 4096
+            })
+        });
+
+        if (!resp.ok) {
+            const err = await resp.json();
+            throw new Error(err.error?.message || `HTTP ${resp.status}`);
+        }
+        
+        const data = await resp.json();
+        let rawTxt = data.choices[0].message.content.trim();
+
+        rawTxt = rawTxt.replace(/```json/g, '').replace(/```/g, '').trim();
+
+        const plan = JSON.parse(rawTxt);
+
+        globalPlan = plan;
+        renderLessonPlan(plan);
+        setStatus("Success", "Lesson plan generated!");
+        setTimeout(() => setStatus(null), 3000);
+
+    } catch(e) {
+        console.error(e);
+        setStatus("Error", "AI Generation Failed. Check API key, quota, or console for details.", "error");
+    }
+});
+
+// --- 3. RENDERING LOGIC (The Table Layout) ---
+function renderLessonPlan(data) {
+    const d = document;
+    
+    // Gather User Inputs
+    const sTeacher = d.getElementById('studentTeacher').value;
+    const gTeacher = d.getElementById('guideTeacher').value;
+    const school = d.getElementById('schoolName').value;
+    const cls = d.getElementById('cls').value;
+    const subj = d.getElementById('subject').value;
+    const topic = d.getElementById('lessonTopic').value;
+    const unit = d.getElementById('unit').value;
+    const date = d.getElementById('date').value;
+    const dur = d.getElementById('duration').value;
+
+    const html = `
+        <h1 style="text-align: center; font-weight: bold; font-size: 20pt; text-decoration: underline; margin-bottom: 20px;">LESSON PLAN</h1>
+        
+        <div class="header-grid">
+            <span class="header-label">Name of Student Teacher</span>
+            <span>: ${sTeacher}</span>
+            
+            <span class="header-label">Name of Guide Teacher</span>
+            <span>: ${gTeacher}</span>
+            
+            <span class="header-label">Name of School</span>
+            <span>: ${school}</span>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse; margin-top: 10px; border: 1px solid black;">
+            <tr>
+                <td style="border: 1px solid black; padding: 5px;"><b>Class:</b> ${cls}</td>
+                <td style="border: 1px solid black; padding: 5px;"><b>Subject:</b> ${subj}</td>
+                <td style="border: 1px solid black; padding: 5px;"><b>Topic:</b> ${topic}</td>
+            </tr>
+            <tr>
+                <td style="border: 1px solid black; padding: 5px;"><b>Unit:</b> ${unit}</td>
+                <td style="border: 1px solid black; padding: 5px;"><b>Date:</b> ${date}</td>
+                <td style="border: 1px solid black; padding: 5px;"><b>Duration:</b> ${dur}</td>
+            </tr>
+        </table>
+
+        <div style="margin-top: 20px; margin-bottom: 10px;">
+            <b>Motivation / Introduction:</b>
+            <p style="margin-top: 5px;">${data.introduction}</p>
+        </div>
+
+        <table class="lp-table">
+            <thead>
+                <tr>
+                    <th class="col-content">Content</th>
+                    <th class="col-specs">Specifications / Objectives</th>
+                    <th class="col-experience">Learning Experience</th>
+                    <th class="col-eval">Evaluation</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${data.rows.map(row => `
+                    <tr>
+                        <td>${row.content}</td>
+                        <td>${row.specifications}</td>
+                        <td>
+                            <span class="activity-header">Teacher Activity:</span>
+                            ${row.teacher_activity}
+                            <br><br>
+                            <span class="activity-header">Student Activity:</span>
+                            ${row.student_activity}
+                        </td>
+                        <td>${row.evaluation}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+
+        <div style="margin-top: 20px;">
+            <b>Follow Up / Assignment:</b>
+            <p>${data.follow_up}</p>
+        </div>
+
+        <div class="signature-section">
+            <div>Signature of Student Teacher</div>
+            <div>Signature of Guide Teacher</div>
+        </div>
+    `;
+
+    document.getElementById('content').innerHTML = html;
+}
+
+// --- 4. PDF DOWNLOAD (Using pdfmake for proper page splitting without content loss) ---
+function downloadPDF() {
+    if (!globalPlan) {
+        alert("Please generate the lesson plan first.");
+        return;
+    }
+
+    const d = document;
+    
+    // Gather User Inputs
+    const sTeacher = d.getElementById('studentTeacher').value;
+    const gTeacher = d.getElementById('guideTeacher').value;
+    const school = d.getElementById('schoolName').value;
+    const cls = d.getElementById('cls').value;
+    const subj = d.getElementById('subject').value;
+    const topic = d.getElementById('lessonTopic').value;
+    const unit = d.getElementById('unit').value;
+    const date = d.getElementById('date').value;
+    const dur = d.getElementById('duration').value;
+
+    const data = globalPlan;
+
+    const docDefinition = {
+        pageSize: 'A4',
+        pageMargins: [15, 15, 15, 25.4],  // Left, top, right, bottom (1 inch bottom for all pages; adjust if needed)
+        defaultStyle: {
+            font: 'Times',
+            fontSize: 12,
+            lineHeight: 1.3,
+            color: '#000'
+        },
+        content: [
+            { text: 'LESSON PLAN', alignment: 'center', bold: true, fontSize: 20, decoration: 'underline', margin: [0, 0, 0, 20] },
+            
+            {
+                stack: [
+                    { columns: [{ width: 180, text: 'Name of Student Teacher', bold: true }, { text: `: ${sTeacher}` }] },
+                    { columns: [{ width: 180, text: 'Name of Guide Teacher', bold: true }, { text: `: ${gTeacher}` }] },
+                    { columns: [{ width: 180, text: 'Name of School', bold: true }, { text: `: ${school}` }] }
+                ],
+                margin: [0, 0, 0, 10]
+            },
+
+            {
+                table: {
+                    widths: ['*', '*', '*'],
+                    body: [
+                        [
+                            { text: `Class: ${cls}`, bold: true },
+                            { text: `Subject: ${subj}`, bold: true },
+                            { text: `Topic: ${topic}`, bold: true }
+                        ],
+                        [
+                            { text: `Unit: ${unit}`, bold: true },
+                            { text: `Date: ${date}`, bold: true },
+                            { text: `Duration: ${dur}`, bold: true }
+                        ]
+                    ]
+                },
+                layout: {
+                    hLineWidth: () => 1,
+                    vLineWidth: () => 1,
+                    hLineColor: '#000',
+                    vLineColor: '#000',
+                    paddingLeft: () => 5,
+                    paddingRight: () => 5,
+                    paddingTop: () => 2,
+                    paddingBottom: () => 2
+                },
+                margin: [0, 0, 0, 20]
+            },
+
+            { text: 'Motivation / Introduction:', bold: true, margin: [0, 0, 0, 5] },
+            { text: data.introduction, margin: [0, 0, 0, 15] },
+
+            {
+                table: {
+                    headerRows: 1,
+                    widths: ['20%', '15%', '45%', '20%'],
+                    body: [
+                        [
+                            { text: 'Content', bold: true, alignment: 'center', fillColor: '#f3f3f3' },
+                            { text: 'Specifications / Objectives', bold: true, alignment: 'center', fillColor: '#f3f3f3' },
+                            { text: 'Learning Experience', bold: true, alignment: 'center', fillColor: '#f3f3f3' },
+                            { text: 'Evaluation', bold: true, alignment: 'center', fillColor: '#f3f3f3' }
+                        ],
+                        ...data.rows.map(row => [
+                            row.content,
+                            row.specifications,
+                            {
+                                stack: [
+                                    { text: 'Teacher Activity:', bold: true, decoration: 'underline', margin: [0, 0, 0, 4] },
+                                    row.teacher_activity,
+                                    '\n',
+                                    { text: 'Student Activity:', bold: true, decoration: 'underline', margin: [0, 0, 0, 4] },
+                                    row.student_activity
+                                ]
+                            },
+                            row.evaluation
+                        ])
+                    ]
+                },
+                layout: {
+                    hLineWidth: () => 1,
+                    vLineWidth: () => 1,
+                    hLineColor: '#000',
+                    vLineColor: '#000',
+                    paddingLeft: () => 8,
+                    paddingRight: () => 8,
+                    paddingTop: () => 8,
+                    paddingBottom: () => 8
+                },
+                margin: [0, 0, 0, 20]
+            },
+
+            { text: 'Follow Up / Assignment:', bold: true, margin: [0, 0, 0, 5] },
+            { text: data.follow_up, margin: [0, 0, 0, 50] },
+
+            {
+                columns: [
+                    { text: 'Signature of Student Teacher', bold: true },
+                    { text: 'Signature of Guide Teacher', bold: true, alignment: 'right' }
+                ]
+            }
+        ]
+    };
+
+    pdfMake.createPdf(docDefinition).download("LessonPlan.pdf");
+}
+</script>
+</body>
+  </html>
